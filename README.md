@@ -54,4 +54,3 @@ python deep_sort_tracking_id.py --weights yolov7.pt  --img 640  --source test1.m
 #### Vehicles Detection, Tracking and Counting
 
 ![](./figure3.png)
-
