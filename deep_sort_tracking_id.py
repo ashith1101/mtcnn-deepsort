@@ -10,55 +10,66 @@ from deep_sort_pytorch.deep_sort import DeepSort
 from collections import deque
 import numpy as np
 from numpy import random
-palette = (2 ** 11 - 1, 2 ** 15 - 1, 2 ** 20 - 1)
-data_deque = {}
+
+from models.experimental import attempt_load
+from utils.datasets import LoadStreams, LoadImages
 from utils.general import check_img_size, check_requirements, check_imshow, non_max_suppression, apply_classifier, \
     scale_coords, xyxy2xywh, strip_optimizer, set_logging, increment_path
+from utils.plots import plot_one_box
 from utils.torch_utils import select_device, load_classifier, time_synchronized, TracedModel
-from utils.datasets import LoadStreams, LoadImages
-from models.experimental import attempt_load
 
-def xyxy_to_xywh(*xyxy):
-    """Calculates the relative bounding box from absolute pixel values."""
-    bbox_left = min([xyxy[0].item(), xyxy[2].item()])
-    bbox_top = min([xyxy[1].item(), xyxy[3].item()])
-    bbox_w = abs(xyxy[0].item() - xyxy[2].item())
-    bbox_h = abs(xyxy[1].item() - xyxy[3].item())
-    x_c = (bbox_left + bbox_w / 2)
-    y_c = (bbox_top + bbox_h / 2)
-    w = bbox_w
-    h = bbox_h
-    return x_c, y_c, w, h
+data_deque = {}
 
+def draw_boxes(img, bbox, names, object_id, identities=None, offset=(0, 0)):
+    count_students = len(identities)
+    print(f"Number of students in the classroom: {count_students}")
 
-def xyxy_to_tlwh(bbox_xyxy):
-    tlwh_bboxs = []
-    for i, box in enumerate(bbox_xyxy):
+    for key in list(data_deque):
+        if key not in identities:
+            data_deque.pop(key)
+
+    for i, box in enumerate(bbox):
         x1, y1, x2, y2 = [int(i) for i in box]
-        top = x1
-        left = y1
-        w = int(x2 - x1)
-        h = int(y2 - y1)
-        tlwh_obj = [top, left, w, h]
-        tlwh_bboxs.append(tlwh_obj)
-    return tlwh_bboxs
+        x1 += offset[0]
+        x2 += offset[0]
+        y1 += offset[1]
+        y2 += offset[1]
+
+        center = (int((x2 + x1) / 2), int((y2 + y2) / 2))
+
+        id = int(identities[i]) if identities is not None else 0
+
+        if id not in data_deque:
+            data_deque[id] = deque(maxlen=opt.trailslen)
+
+        color = (0, 255, 0)  # Green color for faces
+        obj_name = 'Person'  # You can change this label as per your need
+        label = '{}{:d}'.format("", id) + ":" + '%s' % (obj_name)
+
+        data_deque[id].appendleft(center)
+        UI_box(box, img, label=label, color=color, line_thickness=2)
+
+        for i in range(1, len(data_deque[id])):
+            if data_deque[id][i - 1] is None or data_deque[id][i] is None:
+                continue
+            thickness = int(np.sqrt(opt.trailslen / float(i + i)) * 1.5)
+            cv2.line(img, data_deque[id][i - 1], data_deque[id][i], color, thickness)
+
+    return img
 
 
-def compute_color_for_labels(label):
-    """
-    Simple function that adds fixed color depending on the class
-    """
-    if label == 0:  # person
-        color = (85, 45, 255)
-    elif label == 2:  # Car
-        color = (222, 82, 175)
-    elif label == 3:  # Motobike
-        color = (0, 204, 255)
-    elif label == 5:  # Bus
-        color = (0, 149, 255)
-    else:
-        color = [int((p * (label ** 2 - label + 1)) % 255) for p in palette]
-    return tuple(color)
+def UI_box(x, img, color=None, label=None, line_thickness=None):
+    # Plots one bounding box on image img
+    tl = line_thickness or round(0.002 * (img.shape[0] + img.shape[1]) / 2) + 1  # line/font thickness
+    color = color or [random.randint(0, 255) for _ in range(3)]
+    c1, c2 = (int(x[0]), int(x[1])), (int(x[2]), int(x[3]))
+    if label:
+        tf = max(tl - 1, 1)  # font thickness
+        t_size = cv2.getTextSize(label, 0, fontScale=tl / 3, thickness=tf)[0]
+
+        img = draw_border(img, (c1[0], c1[1] - t_size[1] - 3), (c1[0] + t_size[0], c1[1] + 3), color, 1, 8, 2)
+
+        cv2.putText(img, label, (c1[0], c1[1] - 2), 0, tl / 3, [225, 255, 255], thickness=tf, lineType=cv2.LINE_AA)
 
 
 def draw_border(img, pt1, pt2, color, thickness, r, d):
@@ -92,58 +103,6 @@ def draw_border(img, pt1, pt2, color, thickness, r, d):
     return img
 
 
-def UI_box(x, img, color=None, label=None, line_thickness=None):
-    # Plots one bounding box on image img
-    tl = line_thickness or round(0.002 * (img.shape[0] + img.shape[1]) / 2) + 1  # line/font thickness
-    color = color or [random.randint(0, 255) for _ in range(3)]
-    c1, c2 = (int(x[0]), int(x[1])), (int(x[2]), int(x[3]))
-    if label:
-        tf = max(tl - 1, 1)  # font thickness
-        t_size = cv2.getTextSize(label, 0, fontScale=tl / 3, thickness=tf)[0]
-
-        img = draw_border(img, (c1[0], c1[1] - t_size[1] - 3), (c1[0] + t_size[0], c1[1] + 3), color, 1, 8, 2)
-
-        cv2.putText(img, label, (c1[0], c1[1] - 2), 0, tl / 3, [225, 255, 255], thickness=tf, lineType=cv2.LINE_AA)
-
-
-def draw_boxes(img, bbox, names, object_id, identities=None, offset=(0, 0)):
-    count_students = len(identities)
-    print(f"Number of students in the classroom: {count_students}")
-
-    for key in list(data_deque):
-        if key not in identities:
-            data_deque.pop(key)
-
-    for i, box in enumerate(bbox):
-        x1, y1, x2, y2 = [int(i) for i in box]
-        x1 += offset[0]
-        x2 += offset[0]
-        y1 += offset[1]
-        y2 += offset[1]
-
-        center = (int((x2 + x1) / 2), int((y2 + y2) / 2))
-
-        id = int(identities[i]) if identities is not None else 0
-
-        if id not in data_deque:
-            data_deque[id] = deque(maxlen=opt.trailslen)
-
-        color = compute_color_for_labels(object_id[i])
-        obj_name = names[object_id[i]]
-        label = '{}{:d}'.format("", id) + ":" + '%s' % (obj_name)
-
-        data_deque[id].appendleft(center)
-        UI_box(box, img, label=label, color=color, line_thickness=2)
-
-        for i in range(1, len(data_deque[id])):
-            if data_deque[id][i - 1] is None or data_deque[id][i] is None:
-                continue
-            thickness = int(np.sqrt(opt.trailslen / float(i + i)) * 1.5)
-            cv2.line(img, data_deque[id][i - 1], data_deque[id][i], color, thickness)
-
-    return img
-
-
 def load_classes(path):
     with open(path, 'r') as f:
         names = f.read().split('\n')
@@ -169,25 +128,17 @@ def detect(save_img=False):
                         nn_budget=cfg_deep.DEEPSORT.NN_BUDGET,
                         use_cuda=True)
 
+    # Initialize MTCNN for face detection
+    mtcnn = MTCNN()
+
     # Initialize
     device = select_device(opt.device)
     half = device.type != 'cpu'
 
-    # Load model
-    model = attempt_load(weights, map_location=device)
-    stride = int(model.stride.max())
-    imgsz = check_img_size(imgsz, s=stride)
-
-    if trace:
-        model = TracedModel(model, device, opt.img_size)
-
-    if half:
-        model.half()
-
-    classify = False
-    if classify:
-        modelc = load_classifier(name='resnet101', n=2)  # initialize
-        modelc.load_state_dict(torch.load('weights/resnet101.pt', map_location=device)['model']).to(device).eval()
+     # Load model
+    model = attempt_load(weights, map_location=device)  # load FP32 model
+    stride = int(model.stride.max())  # model stride
+    imgsz = check_img_size(imgsz, s=stride) 
 
     vid_path, vid_writer = None, None
     if opt.source.isnumeric() or opt.source.endswith('.txt') or opt.source.lower().startswith(
@@ -202,6 +153,7 @@ def detect(save_img=False):
     t0 = time.time()
     with torch.no_grad():
         for path, img, im0s, vid_cap in dataset:
+            p = path 
             img = torch.from_numpy(img).to(device)
             img = img.half() if half else img.float()
             img /= 255.0
@@ -217,81 +169,50 @@ def detect(save_img=False):
                     model(img, augment=opt.augment)[0]
 
             t1 = time_synchronized()
-            with torch.no_grad():
-                pred = model(img, augment=opt.augment)[0]
+
+            # Perform face detection using MTCNN
+            faces = mtcnn.detect_faces(im0s)
+
             t2 = time_synchronized()
 
-            pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
-            t3 = time_synchronized()
+            bbox = [[face['box'][0], face['box'][1], face['box'][0] + face['box'][2], face['box'][1] + face['box'][3]]
+                    for face in faces]
 
-            if classify:
-                pred = apply_classifier(pred, modelc, img, im0s)
+            bbox = torch.tensor(bbox)
 
-            for i, det in enumerate(pred):
-                if opt.source.isnumeric():
-                    p, s, im0, frame = path[i], '%g: ' % i, im0s[i].copy(), dataset.count
-                else:
-                    p, s, im0, frame = path, '', im0s, getattr(dataset, 'frame', 0)
+            if len(bbox) > 0:
+                outputs = deepsort.update(bbox, None, None, im0s)
+                if len(outputs) > 0:
+                    bbox_xyxy = outputs[:, :4]
+                    identities = outputs[:, -2]
+                    object_id = outputs[:, -1]
 
-                p = Path(p)
-                save_path = str(save_dir / p.name)
-                txt_path = str(save_dir / 'labels' / p.stem) + ('' if dataset.mode == 'image' else f'_{frame}')
-                gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]
+                    draw_boxes(im0s, bbox_xyxy, names, object_id, identities)
 
-                if len(det):
-                    det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
+            print(f'Face detection: {(t2 - t1):.3f}s')
 
-                    xywh_bboxs = []
-                    confs = []
-                    oids = []
+            if view_img:
+                cv2.imshow(str(p), im0s)
+                cv2.waitKey(1)
 
-                    for *xyxy, conf, cls in reversed(det):
-                        x_c, y_c, bbox_w, bbox_h = xyxy_to_xywh(*xyxy)
-                        xywh_obj = [x_c, y_c, bbox_w, bbox_h]
-                        xywh_bboxs.append(xywh_obj)
-                        confs.append([conf.item()])
-                        oids.append(int(cls))
-                        if save_txt:
-                            xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()
-                            line = (cls, *xywh, conf) if opt.save_conf else (cls, *xywh)
-                            with open(txt_path + '.txt', 'a') as f:
-                                f.write(('%g ' * len(line)).rstrip() % line + '\n')
-
-                    xywhs = torch.Tensor(xywh_bboxs)
-                    confss = torch.Tensor(confs)
-
-                    outputs = deepsort.update(xywhs, confss, oids, im0)
-                    if len(outputs) > 0:
-                        bbox_xyxy = outputs[:, :4]
-                        identities = outputs[:, -2]
-                        object_id = outputs[:, -1]
-
-                        draw_boxes(im0, bbox_xyxy, names, object_id, identities)
-
-                print(f'{s}Done. ({(1E3 * (t2 - t1)):.1f}ms) Inference, ({(1E3 * (t3 - t2)):.1f}ms) NMS')
-
-                if view_img:
-                    cv2.imshow(str(p), im0)
-                    cv2.waitKey(1)
-
-                if save_img:
-                    if dataset.mode == 'image':
-                        cv2.imwrite(save_path, im0)
-                        print(f" The image with the result is saved in: {save_path}")
-                else:
-                    if vid_path != save_path:
-                        vid_path = save_path
-                        if isinstance(vid_writer, cv2.VideoWriter):
-                            vid_writer.release()
-                        if vid_cap:
-                            fps = vid_cap.get(cv2.CAP_PROP_FPS)
-                            w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                            h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                        else:
-                            fps, w, h = 30, im0.shape[1], im0.shape[0]
-                            save_path += '.mp4'
-                        vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
-                    vid_writer.write(im0)
+            if save_img:
+                if dataset.mode == 'image':
+                    cv2.imwrite(save_path, im0s)
+                    print(f" The image with the result is saved in: {save_path}")
+            else:
+                if vid_path != save_path:
+                    vid_path = save_path
+                    if isinstance(vid_writer, cv2.VideoWriter):
+                        vid_writer.release()
+                    if vid_cap:
+                        fps = vid_cap.get(cv2.CAP_PROP_FPS)
+                        w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                        h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                    else:
+                        fps, w, h = 30, im0s.shape[1], im0s.shape[0]
+                        save_path += '.mp4'
+                    vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
+                vid_writer.write(im0s)
 
     if save_txt or save_img:
         s = f"\n{len(list(save_dir.glob('labels/*.txt')))} labels saved to {save_dir / 'labels'}" if save_txt else ''
@@ -324,11 +245,4 @@ if __name__ == '__main__':
     parser.add_argument('--trailslen', type=int, default=64, help='trails size (new parameter)')
     opt = parser.parse_args()
     print(opt)
-    with torch.no_grad():
-        if opt.update:
-            for opt.weights in ['yolov7.pt']:
-                detect()
-                strip_optimizer(opt.weights)
-        else:
-            detect()
-
+    detect()
