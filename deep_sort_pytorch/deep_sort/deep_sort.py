@@ -58,14 +58,14 @@ class DeepSort(object):
     Thanks JieChen91@github.com for reporting this bug!
     """
     @staticmethod
+    
     def _xywh_to_tlwh(bbox_xywh):
-        if isinstance(bbox_xywh, np.ndarray):
-            bbox_tlwh = bbox_xywh.copy()
-        elif isinstance(bbox_xywh, torch.Tensor):
-            bbox_tlwh = bbox_xywh.clone()
+        bbox_xywh = np.array(bbox_xywh)  # Convert bbox_xywh to numpy array
+        bbox_tlwh = bbox_xywh.copy()
         bbox_tlwh[:, 0] = bbox_xywh[:, 0] - bbox_xywh[:, 2] / 2.
         bbox_tlwh[:, 1] = bbox_xywh[:, 1] - bbox_xywh[:, 3] / 2.
         return bbox_tlwh
+
 
     def _xywh_to_xyxy(self, bbox_xywh):
         x, y, w, h = bbox_xywh
