@@ -3,6 +3,8 @@ from mtcnn.mtcnn import MTCNN
 from deep_sort_pytorch.utils.parser import get_config
 from deep_sort_pytorch.deep_sort import DeepSort
 
+
+
 def main():
     # Initialize MTCNN for face detection
     mtcnn = MTCNN()
@@ -52,6 +54,7 @@ def main():
                 cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
             
             # Update DeepSORT tracker
+            # Update DeepSORT tracker
             if bbox_xyxy:
                 confs_flat = [conf for sublist in confs for conf in sublist]  # Flatten the list of lists
                 outputs = deepsort.update(bbox_xyxy, confs_flat, oids, frame)
@@ -66,13 +69,25 @@ def main():
                     bbox_ratio = min(1.0, 1.3 * (face_area / ((w - x) * (h - y))))
                     w_new = int((w - x) * bbox_ratio)
                     h_new = int((h - y) * bbox_ratio)
-                    x_new = max(0, int(x - (w_new - (w - x)) / 2))
-                    y_new = max(0, int(y - (h_new - (h - y)) / 2))
+                    
+                    # Define maximum width and height
+                    max_width = 100
+                    max_height = 100
+                    
+                    # Ensure that bounding box dimensions do not exceed the maximum
+                    w_new = min(w_new, max_width)
+                    h_new = min(h_new, max_height)
+                    
+                    # Update coordinates to keep the bounding box centered
+                    x_new = max(0, int(x + (w - w_new) / 2))
+                    y_new = max(0, int(y + (h - h_new) / 2))
+                    
                     bbox_tlwh = [x_new, y_new, x_new + w_new, y_new + h_new]
                     
                     # Draw tracked bounding box and ID
                     cv2.rectangle(frame, (bbox_tlwh[0], bbox_tlwh[1]), (bbox_tlwh[2], bbox_tlwh[3]), (0, 255, 0), 2)
                     cv2.putText(frame, str(identity), (bbox_tlwh[0], bbox_tlwh[1]-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
 
             # Display the resulting frame
             cv2.imshow('Frame', frame)
