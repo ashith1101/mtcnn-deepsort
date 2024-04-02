@@ -51,7 +51,7 @@ def main():
                 next_id += 1  # Increment unique ID counter
                 
                 # Draw bounding box around face
-                cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
+                # cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
             
             # Update DeepSORT tracker
             # Update DeepSORT tracker
